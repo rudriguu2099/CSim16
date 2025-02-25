@@ -32,6 +32,7 @@ void setFlags(int resultado, int carry, int overflow) {
     if (resultado < 0) FLAGS |= FLAG_S;
     if (carry) FLAGS |= FLAG_C;
     if (overflow) FLAGS |= FLAG_Ov;
+
 }
 
 //Função pra printar o estado dos registradores e etc da Cpu
@@ -72,131 +73,187 @@ void carregarPrograma(const char *nomeArquivo){
     }
 
     char linha[100];
-    //simploficar essa leitura depois!!
+    
     while (fgets(linha, sizeof(linha), arquivo)) {
         unsigned int endereco, conteudo;
-        sscanf(linha, "%x:%x", &endereco, &conteudo);
-        memoriaDePrograma[endereco] = (uint16_t)conteudo;
+        if (sscanf(linha, "%4hx: 0x%4hx", &endereco, &conteudo) == 2){
+            memoriaDePrograma[endereco] = conteudo & 0xFF;
+            memoriaDePrograma[endereco + 1] = (conteudo >> 8) & 0xFF;
+        }
     }
     fclose(arquivo);
 }
 
 void executarInstrucao(){
     while(1){
-        uint16_t instrucao = memoriaDePrograma[PC];  // Buscar instrução
-        PC += 2;  // Incrementa PC
+        // Busca a instrução (16 bits)
+        uint16_t instrucao = (memoriaDePrograma[PC] << 8) | memoriaDePrograma[PC + 1];
+        PC += 2;
 
+        // Decodificação da instrução
         uint8_t opcode = (instrucao >> 12) & 0x0F;  // OpCode (bits 15-12)
         uint8_t is_imediato = (instrucao >> 11) & 0x01;  // Bit 11 (0 = registrador, 1 = imediato)
         uint8_t rd = (instrucao >> 8) & 0x07;       // Registrador destino (bits 10-8)
         uint8_t rn = (instrucao >> 5) & 0x07;       // Registrador origem (bits 7-5)
         uint8_t rm = instrucao & 0x07;              // Outro registrador (bits 2-0)
-        uint8_t lstBits = instrucao & 0x03;         // ultimos 2 bits
+        uint8_t lstBits = instrucao & 0x03;         // Últimos 2 bits
+        uint16_t imediato = instrucao & 0xFF;       // Valor imediato (8 bits)
         //mov
         if (opcode == 0b0001){
             if (is_imediato == 0){
                 R[rd] = R[rm];
             }
             else if (is_imediato == 1){
-                R[rd] = instrucao & 0xFF;
+                R[rd] = imediato;
             }
         }
         //str
         if (opcode == 0b0010){
             if (is_imediato == 0){
-
+                memoriaDeDados[R[rn]] = R[rd];
             }
             else if(is_imediato == 1){
-
+                R[rn] = imediato;
             }
         }
         //ldr
         if (opcode == 0b0011){
-            
+            R[rd] = memoriaDeDados[R[rm]];
         }
         //add
         if (opcode == 0b0100){
-
+            uint16_t resultado = R[rn] + R[rm];  
+            int carry = R[rd] < R[rn]; 
+            int overflow = (R[rn] > 0 && R[rm] > 0 && resultado < 0) || (R[rn] < 0 && R[rm] < 0 && resultado >= 0);
+            R[rd] = resultado;
+            setFlags(resultado, carry, overflow); 
         }
         //sub
         if (opcode == 0b0101){
-
+            uint16_t resultado = R[rn] - R[rm];
+            int carry = (R[rn] < R[rm]); 
+            int overflow = (R[rn] >= 0 && R[rm] < 0 && resultado < 0) || (R[rn] < 0 && R[rm] >= 0 && resultado >= 0);
+            R[rd] = resultado;
+            setFlags(resultado, carry, overflow);
         }
         //mul
         if (opcode == 0b0110){
-
+            uint16_t resultado = R[rn] * R[rm];
+            R[rd] = resultado;
+            setFlags(resultado, 0, 0);
         }
         // and
         if (opcode == 0b0111){
-
+            uint16_t resultado = R[rn] & R[rm];
+            R[rd] = resultado;
+            setFlags(resultado, 0, 0);
         }
         // or
         if (opcode == 0b1000){
-
+            uint16_t resultado = R[rn] | R[rm];
+            R[rd] = resultado;
+            setFlags(resultado, 0, 0);
         }
         // not
         if (opcode == 0b1001){
+            uint16_t resultado = ~R[rm];
+            R[rd] = resultado;
+            setFlags(resultado, 0, 0);
 
         }
         // xor
         if (opcode == 0b1010){
-
+            uint16_t resultado = R[rn] ^ R[rm];
+            R[rd] = resultado;
+            setFlags(resultado, 0, 0);
         }
         //psh
         if (opcode == 0b0000 && is_imediato == 0 && lstBits == 0b01){
-
+            if (SP > STK_START) {
+                pilha[--SP] = R[rm];
+            } else {
+                printf("Erro: Estouro de pilha!\n");
+                exit(1);
+            }
         }
         //pop
         if (opcode == 0b0000 && is_imediato == 0 && lstBits == 0b10){
-
+            if (SP < STK_START + STK_SIZE) {
+                R[rm] = pilha[SP++];
+            } else {
+                printf("Erro: Underflow de pilha!\n");
+                exit(1);
+            }
         }
         //cmp
         if (opcode == 0b0000 && is_imediato == 0 && lstBits == 0b11){
-
+            int resultado = R[rn] - R[rm];
+            int carry = (R[rn] < R[rm]);
+            setFlags(resultado, carry, 0);
         }
         // jmp
         if (opcode == 0b0000 && is_imediato == 1 && lstBits == 0b00){
-
+            PC += imediato;
         }
         // jeq
         if (opcode == 0b0000 && is_imediato == 1 && lstBits == 0b01){
-
+            if ((FLAGS & FLAG_Z) && !(FLAGS & FLAG_C)) {
+                PC += imediato;
+            }
         }
         // jlt
         if (opcode == 0b0000 && is_imediato == 1 && lstBits == 0b10){
-
+            if (!(FLAGS & FLAG_Z) && (FLAGS & FLAG_C)) {
+                PC += (instrucao & 0xFF);
+            }
         }
         // jgt
         if (opcode == 0b0000 && is_imediato == 1 && lstBits == 0b11){
-
+            if ((FLAGS & FLAG_Z) && !(FLAGS & FLAG_C)) {
+                PC += (instrucao & 0xFF);
+            }
         }
         // shr
         if (opcode == 0b1011){
-
+            uint16_t resultado = R[rn] >> 1; 
+            R[rd] = resultado;
+            setFlags(resultado, 0, 0); 
         }
         // shl
         if (opcode == 0b1100){
-
+            uint16_t resultado = R[rn] << 1;
+            R[rd] = resultado;
+            setFlags(resultado, 0, 0);
         }
         // ror
         if (opcode == 0b1101){
-
+            uint16_t resultado = R[rn] >> 1 | R[rn] << 15;
+            R[rd] = resultado;
+            setFlags(resultado, 0, 0);
         }
         // rol
         if (opcode == 0b1110){
-
+            uint16_t resultado = R[rn] << 1 | R[rn] >> 15;
+            R[rd] = resultado;
+            setFlags(resultado, 0, 0);
         }
         //nop
         if (opcode == 0b0000 && is_imediato == 0 && lstBits == 0b00){
-            //printar
+            printEstado();
         }
         //halt
         if (opcode == 0b1111 && is_imediato == 1 && lstBits == 0b11){
             //printar e encerrar
             printf("Execução terminada (HALT)\n");
+            printEstado();
             return;
         }
-
     }
 }
-int main() {}
+    int main() {
+        carregarPrograma("programa.txt");
+        printf("Iniciando execução...\n");
+        executarInstrucao();
+        return 0;
+    }
+
