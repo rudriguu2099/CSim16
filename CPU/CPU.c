@@ -16,8 +16,6 @@ typedef struct {
     uint8_t flags;             // Flags (C, Ov, Z, S)
 } CPU;
 
-#define SP_END (cpu.sp - STK_SIZE)
-
 // Definições das Flags
 #define FLAG_C   0x1  // Carry
 #define FLAG_OV  0x2  // Overflow
@@ -55,13 +53,36 @@ void carregar_programa(const char *nome_arquivo) {
     fclose(arquivo);
 }
 
-// Define as flags após operações
+
 void definir_flags(int resultado, int carry, int overflow) {
     cpu.flags = 0;
     if (resultado == 0) cpu.flags |= FLAG_Z;
     if (resultado < 0) cpu.flags |= FLAG_S;
     if (carry) cpu.flags |= FLAG_C;
     if (overflow) cpu.flags |= FLAG_OV;
+}
+
+void imprimir_estado() {
+    printf("\n=== Estado da CPU ===\n");
+    for (int i = 0; i < 8; i++) {
+        printf("R[%d]: 0x%04X\n", i, cpu.registradores[i]);
+    }
+    printf("PC: 0x%04X | SP: 0x%04X | IR: 0x%04X\n", cpu.pc, cpu.sp, cpu.ir);
+    printf("Flags: [C:%d Ov:%d Z:%d S:%d]\n",
+           (cpu.flags & FLAG_C) ? 1 : 0,
+           (cpu.flags & FLAG_OV) ? 1 : 0,
+           (cpu.flags & FLAG_Z) ? 1 : 0,
+           (cpu.flags & FLAG_S) ? 1 : 0);
+
+
+    printf("\n=== Pilha ===\n");
+    for (int i = 0; i < STK_SIZE; i += 2) {
+        uint16_t endereco = cpu.sp - i;
+        uint16_t valor = pilha[i] | (pilha[i + 1] << 8);
+        printf("0x%04X: 0x%04X\n", endereco, valor);
+    }
+    
+
 }
 
 // Executa uma instrução
@@ -71,7 +92,6 @@ void executar_instrucao() {
         cpu.ir = memoriaDePrograma[cpu.pc] | (memoriaDePrograma[cpu.pc + 1] << 8);
         cpu.pc += 2;
 
-        // Decodificação da instrução
         uint8_t opcode = (cpu.ir >> 12) & 0x0F;  // OpCode (bits 15-12)
         uint8_t is_imediato = (cpu.ir >> 11) & 0x01;  // Bit 11 (0 = registrador, 1 = imediato)
         uint8_t rd = (cpu.ir >> 8) & 0x07;       // Registrador destino (bits 10-8)
@@ -234,50 +254,19 @@ void executar_instrucao() {
             }
         }
         //pilha
-        // psh
-        // psh
-    if (opcode == 0b1111 && bits1_0 == 0b01) {
-        cpu.sp -= 2;  // Desce o ponteiro da pilha
-
-        // Salva os valores na pilha, usando o endereço de pilha atualizado
-        pilha[cpu.sp] = cpu.registradores[rn] & 0x00FF;
-        pilha[cpu.sp + 1] = (cpu.registradores[rn] & 0xFF00) >> 8;
-    }
-
-
-        //pop
-        else if (opcode == 0b1111 && bits1_0 == 0b10) 
-        {
-            cpu.registradores[rd] = pilha[cpu.sp] | (pilha[cpu.sp + 1] << 8); 
-
+        // psh (push)
+        if (opcode == 0b0000 && is_imediato == 0 && (cpu.ir & 0x03) == 0b01) {
+            uint16_t valor = cpu.registradores[rn];
+            pilha[cpu.sp - STK_START] = valor & 0xFF;         
+            pilha[cpu.sp - STK_START + 1] = (valor >> 8) & 0xFF; 
+            cpu.sp -= 2;  
+        }
+        // pop
+        else if (opcode == 0b0000 && is_imediato == 0 && (cpu.ir & 0x03) == 0b10) {
             cpu.sp += 2;
+            cpu.registradores[rd] = pilha[cpu.sp - STK_START] | (pilha[cpu.sp - STK_START + 1] << 8);
         }
-        
-    }
-}
 
-// Imprime o estado da CPU
-void imprimir_estado() {
-    printf("\n=== Estado da CPU ===\n");
-    for (int i = 0; i < 8; i++) {
-        printf("R[%d]: 0x%04X\n", i, cpu.registradores[i]);
-    }
-    printf("PC: 0x%04X | SP: 0x%04X | IR: 0x%04X\n", cpu.pc, cpu.sp, cpu.ir);
-    printf("Flags: [C:%d Ov:%d Z:%d S:%d]\n",
-           (cpu.flags & FLAG_C) ? 1 : 0,
-           (cpu.flags & FLAG_OV) ? 1 : 0,
-           (cpu.flags & FLAG_Z) ? 1 : 0,
-           (cpu.flags & FLAG_S) ? 1 : 0);
-
-    // Imprimir a pilha (começando de STK_START até o SP)
-    printf("\n=== Pilha ===\n");
-
-    while(cpu.sp < 0){
-        cpu.sp -= 2;
-        uint16_t conteudo = pilha[SP_END] | (pilha[SP_END + 1] << 8);
-        if (conteudo != 0){
-            printf("0x%04X: 0x%04X\n", cpu.sp, conteudo);
-        }
     }
 }
 
