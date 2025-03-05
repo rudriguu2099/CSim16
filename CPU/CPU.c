@@ -7,13 +7,13 @@
 #define STK_SIZE   16
 #define STK_START  0x8200
 
-// Estrutura da CPU (registradores e flags)
+// CPU 
 typedef struct {
     uint16_t registradores[8];  // R0-R7
-    uint16_t pc;                // Contador de Programa
-    uint16_t sp;                // Ponteiro de Pilha
-    uint16_t ir;                // Registrador de Instrução
-    uint8_t flags;             // Flags (C, Ov, Z, S)
+    uint16_t pc;                // program counter
+    uint16_t sp;                // stack pointer
+    uint16_t ir;                // instrução
+    uint8_t flags;             // flags (C, Ov, Z, S)
 } CPU;
 
 // Definições das Flags
@@ -24,15 +24,15 @@ typedef struct {
 
 
 // Memórias
-uint8_t memoriaDePrograma[MEM_SIZE] = {0};  // Instruções
-uint8_t memoriaDeDados[MEM_SIZE] = {0};     // Dados
-uint8_t pilha[STK_SIZE] = {0};               // Pilha (full descending)
-CPU cpu = {{0}, 0, STK_START, 0, 0};         // Inicialização da CPU
+uint8_t memoriaDePrograma[MEM_SIZE] = {0};  // vetor de instruções
+uint8_t memoriaDeDados[MEM_SIZE] = {0};     // mem de dados
+uint8_t pilha[STK_SIZE] = {0};               // stack
+CPU cpu = {{0}, 0, STK_START, 0, 0};  
 
 
 // ========== FUNÇÕES PRINCIPAIS ========== //
 
-// Carrega o programa na memória
+// Carrega o programa do arquivo pra memória
 void carregar_programa(const char *nome_arquivo) {
     FILE *arquivo = fopen(nome_arquivo, "r");
     if (!arquivo) {
@@ -45,15 +45,14 @@ void carregar_programa(const char *nome_arquivo) {
 
     while (fgets(linha, sizeof(linha), arquivo)) {
         if (sscanf(linha, "%4hx: 0x%4hx", &endereco, &instrucao) == 2) {
-            memoriaDePrograma[endereco] = instrucao & 0xFF;      // Byte baixo
-            memoriaDePrograma[endereco + 1] = instrucao >> 8;    // Byte alto
+            memoriaDePrograma[endereco] = instrucao & 0xFF;    
+            memoriaDePrograma[endereco + 1] = instrucao >> 8;   
         }
     }
-
     fclose(arquivo);
 }
 
-
+//seta as flags dependendo da operação
 void definir_flags(int resultado, int carry, int overflow) {
     cpu.flags = 0;
     if (resultado == 0) cpu.flags |= FLAG_Z;
@@ -62,6 +61,7 @@ void definir_flags(int resultado, int carry, int overflow) {
     if (overflow) cpu.flags |= FLAG_OV;
 }
 
+//printar no terminal 
 void imprimir_estado() {
     printf("\n=== Estado da CPU ===\n");
     for (int i = 0; i < 8; i++) {
@@ -92,13 +92,13 @@ void executar_instrucao() {
         cpu.ir = memoriaDePrograma[cpu.pc] | (memoriaDePrograma[cpu.pc + 1] << 8);
         cpu.pc += 2;
 
-        uint8_t opcode = (cpu.ir >> 12) & 0x0F;  // OpCode (bits 15-12)
-        uint8_t is_imediato = (cpu.ir >> 11) & 0x01;  // Bit 11 (0 = registrador, 1 = imediato)
-        uint8_t rd = (cpu.ir >> 8) & 0x07;       // Registrador destino (bits 10-8)
-        uint8_t rn = (cpu.ir >> 5) & 0x07;       // Registrador origem (bits 7-5)
-        uint8_t rm = cpu.ir & 0x07;              // Outro registrador (bits 2-0)
+        uint8_t opcode = (cpu.ir >> 12) & 0x0F;  // bits 15-12
+        uint8_t is_imediato = (cpu.ir >> 11) & 0x01;  // bit 11 (0 = registrador, 1 = imediato)
+        uint8_t rd = (cpu.ir >> 8) & 0x07;       // bits 10-8
+        uint8_t rn = (cpu.ir >> 5) & 0x07;       // bits 7-5
+        uint8_t rm = cpu.ir & 0x07;              // bits 2-0
         uint8_t bits1_0 = cpu.ir & 0x03;         // Últimos 2 bits
-        uint16_t valor_imediato = cpu.ir & 0xFF;       // Valor imediato (8 bits)
+        uint16_t valor_imediato = cpu.ir & 0xFF;       // valor imediato (8 bits)
 
         //halt
         if (cpu.ir == 0xFFFF){
@@ -207,13 +207,14 @@ void executar_instrucao() {
             case 0b1101: {
                 uint16_t resultado = (cpu.registradores[rn] << 1) | (cpu.registradores[rn] >> 15); // mudar isso dps
                 cpu.registradores[rd] = resultado;
-
+                definir_flags(resultado, 0, 0);
                 break;
             }
             //rol
             case 0b1110: {
                 uint16_t resultado = (cpu.registradores[rn] << 1) | (cpu.registradores[rn] >> 15);
                 cpu.registradores[rd] = resultado;
+                definir_flags(resultado, 0, 0);
                 break;
             }
             default:
@@ -234,19 +235,19 @@ void executar_instrucao() {
             if (tipoJump == 0x0){
                 cpu.pc += imediato;
             }
-
+            //jeq
             else if (tipoJump == 0x1){
                if ((cpu.flags & FLAG_Z) && !(cpu.flags & FLAG_S)){
                    cpu.pc += imediato;
                }
             }
-
+            //jlt
             else if (tipoJump == 0x2){
                 if (!(cpu.flags & FLAG_Z) && (cpu.flags & FLAG_S)){
                     cpu.pc += imediato;
                 }
             }
-
+            //jgt
             else if (tipoJump == 0x3){
                 if (!(cpu.flags & FLAG_Z) && !(cpu.flags & FLAG_S)){
                     cpu.pc += imediato;
@@ -254,7 +255,7 @@ void executar_instrucao() {
             }
         }
         //pilha
-        // psh (push)
+        // psh
         if (opcode == 0b0000 && is_imediato == 0 && (cpu.ir & 0x03) == 0b01) {
             uint16_t valor = cpu.registradores[rn];
             pilha[cpu.sp - STK_START] = valor & 0xFF;         
@@ -270,7 +271,7 @@ void executar_instrucao() {
     }
 }
 
-
+//função principal
 int main() {
     carregar_programa("instrucoes.txt");
     printf("Iniciando execução...\n");
