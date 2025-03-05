@@ -205,7 +205,7 @@ void executar_instrucao() {
             }
             //ror
             case 0b1101: {
-                uint16_t resultado = (cpu.registradores[rn] << 1) | (cpu.registradores[rn] >> 15); // mudar isso dps
+                uint16_t resultado = (cpu.registradores[rn] << 1) | (cpu.registradores[rn] >> 15);
                 cpu.registradores[rd] = resultado;
                 definir_flags(resultado, 0, 0);
                 break;
